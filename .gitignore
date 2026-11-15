@@ -7,3 +7,8 @@ node_modules/
 !.impeccable/config.json
 # Generated at deploy time from dist/
 site/downloads/
+
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example

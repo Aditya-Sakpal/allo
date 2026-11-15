@@ -4,6 +4,7 @@ A Google Sheets + Apps Script system. Recurring tasks become due automatically. 
 
 - Design and reasoning: [`specs/`](specs/README.md). Start with the [plan](specs/00-plan.md), the [daily-task method](specs/features/F04-daily-task-completion.md) and the [SLA / escalation design](specs/features/F07-notifications-sla-escalation.md).
 - Paste-ready code: [`dist/Code.gs`](dist/Code.gs) + [`dist/appsscript.json`](dist/appsscript.json). Source is in [`src/`](src/).
+- Project site (Cloudflare): **https://allo-recurring-tasks.salesdesk-app.workers.dev**. It covers the overview, the SLA timeline and install steps, and serves the downloadable `Code.gs`. Deploy with `npm run deploy`, which rebuilds `dist/` and runs `wrangler deploy` on `site/`.
 - Tests: 30 scenario tests (the assignment's Tests 1–8 plus 22 "try to break it" cases) that run **inside the Google Sheet** from the menu and locally with `npm test`.
 
 ---

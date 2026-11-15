@@ -6,9 +6,15 @@
   "scripts": {
     "test": "node test/run.js",
     "test:evidence": "node test/run.js --evidence",
-    "build": "node scripts/build.js"
+    "build": "node scripts/build.js",
+    "site": "npm run build && node scripts/build-site.js",
+    "deploy": "npm run site && wrangler deploy",
+    "preview": "wrangler dev"
   },
   "engines": {
     "node": ">=18"
+  },
+  "devDependencies": {
+    "wrangler": "^4.162.0"
   }
 }
