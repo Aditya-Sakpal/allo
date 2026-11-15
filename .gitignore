@@ -1,0 +1,9 @@
+node_modules/
+.clasp.json
+.wrangler/
+*.log
+# Impeccable: keep the shared detector config, not local critique snapshots
+.impeccable/*
+!.impeccable/config.json
+# Generated at deploy time from dist/
+site/downloads/

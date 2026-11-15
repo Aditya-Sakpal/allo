@@ -1,0 +1,14 @@
+{
+  "name": "allo-recurring-tasks",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Google Sheets + Apps Script recurring task tracking, pending reports and escalation automation",
+  "scripts": {
+    "test": "node test/run.js",
+    "test:evidence": "node test/run.js --evidence",
+    "build": "node scripts/build.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
