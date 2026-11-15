@@ -118,7 +118,10 @@ function formatTasks_(ss, sh, team) {
   }
   if (idx['Proof Type']) {
     sh.getRange(2, idx['Proof Type'], rows, 1).setDataValidation(SpreadsheetApp.newDataValidation()
-      .requireValueInList([PROOF.TICKET, PROOF.DAILY], true).setAllowInvalid(false).build());
+      // Warn, don't reject: a rejected value never reaches the engine, so Health could not explain it,
+      // and a strict rule makes Sheets refuse scripted writes (fail soft for data, CLAUDE.md rule 9).
+      .requireValueInList([PROOF.TICKET, PROOF.DAILY], true).setAllowInvalid(true)
+      .setHelpText('Ticket ID or Daily Update. Anything else is flagged in the Health column.').build());
   }
   if (idx['Assigned To']) {
     sh.getRange(2, idx['Assigned To'], rows, 1).setDataValidation(SpreadsheetApp.newDataValidation()

@@ -98,10 +98,7 @@ function onOpen() {
       .addItem('Jump to next cut-off + 1 min (resolve deadline)', 'menuClockResolveDeadline')
       .addSeparator()
       .addItem('Back to real time', 'menuClockReal'))
-    .addSubMenu(ui.createMenu('🧪 Automated tests')
-      .addItem('Run core tests (T1–T8)', 'menuTestsCore')
-      .addItem('Run robustness tests (B01–B22)', 'menuTestsBreak')
-      .addItem('Run all tests', 'menuTestsAll'))
+    .addSubMenu(testParts_().reduce(function (m, p) { return m.addItem(p.label, p.fn); }, ui.createMenu('🧪 Automated tests')))
     .addSeparator()
     .addSubMenu(ui.createMenu('🛠 Admin')
       .addItem('Setup / repair sheets', 'setupSystem')
@@ -207,9 +204,12 @@ function menuClockResolveDeadline() {
 }
 function menuClockReal() { moveDemoClock_(function () { return null; }); }
 
+// One entry point per part of testParts_(): each must finish inside Google's 6-minute limit.
 function menuTestsCore() { runTestsToSheet_('core'); }
-function menuTestsBreak() { runTestsToSheet_('break'); }
-function menuTestsAll() { runTestsToSheet_('all'); }
+function menuTestsBreak1() { runTestsToSheet_('break1'); }
+function menuTestsBreak2() { runTestsToSheet_('break2'); }
+function menuTestsBreak3() { runTestsToSheet_('break3'); }
+function menuTestsBreak4() { runTestsToSheet_('break4'); }
 
 /* ───────────── web app ───────────── */
 

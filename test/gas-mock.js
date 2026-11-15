@@ -5,6 +5,8 @@
  *  - getRange() beyond the sheet's max rows/cols throws (as in Apps Script)
  *  - setValues()/setBackgrounds()/... throw on dimension mismatch
  *  - insertCheckboxes() sets every cell in the range to FALSE
+ *  - a "reject input" list validation (setAllowInvalid(false)) makes setValue(s) of any other value throw,
+ *    with Sheets' own message; Sheet.clear() keeps validations (only clearDataValidations() removes them)
  *  - getLastRow()/getLastColumn() count any non-empty value (FALSE included)
  *  - unknown getX / isX / hasX methods throw, so code can't silently rely on unmocked reads
  * Formatting/setter methods without data semantics are no-ops that return `this` for chaining.
@@ -99,11 +101,13 @@ class MockRange {
       if (typeof v === 'number' && !isFinite(v)) throw new Error(`[gas-mock] setValues: non-finite number at [${i}][${j}]`);
       if (typeof v === 'string' && v.length > 50000) throw new Error('[gas-mock] setValues: cell exceeds 50000 characters');
     }));
+    data.forEach((row, i) => row.forEach((v, j) => this._sheet._checkRule(this._r + i, this._c + j, v)));
     data.forEach((row, i) => row.forEach((v, j) => this._sheet._set(this._r + i, this._c + j, v === null ? '' : v)));
     return this;
   }
   setValue(v) {
     if (v === undefined) throw new Error('[gas-mock] setValue: undefined');
+    this._each((r, c) => this._sheet._checkRule(r, c, v));
     this._each((r, c) => this._sheet._set(r, c, v === null ? '' : v));
     return this;
   }
@@ -114,7 +118,7 @@ class MockRange {
     return this;
   }
   clearDataValidations() {
-    this._each((r, c) => this._sheet._checks.delete(`${r}:${c}`));
+    this._each((r, c) => { this._sheet._checks.delete(`${r}:${c}`); this._sheet._dv.delete(`${r}:${c}`); });
     return this;
   }
   setNumberFormats(f) {
@@ -130,7 +134,12 @@ class MockRange {
   setBackgrounds(f) { checkDims(f, this._nr, this._nc, 'setBackgrounds'); return this; }
   setFontWeights(f) { checkDims(f, this._nr, this._nc, 'setFontWeights'); return this; }
   setFontColors(f) { checkDims(f, this._nr, this._nc, 'setFontColors'); return this; }
-  setDataValidation(rule) { if (!rule || !rule.__dv) throw new Error('[gas-mock] setDataValidation needs a built rule'); return this; }
+  /** null removes the rule (as in Apps Script); anything else must come from builder.build(). */
+  setDataValidation(rule) {
+    if (rule !== null && (!rule || !rule.__dv)) throw new Error('[gas-mock] setDataValidation needs a built rule or null');
+    this._each((r, c) => (rule === null ? this._sheet._dv.delete(`${r}:${c}`) : this._sheet._dv.set(`${r}:${c}`, rule)));
+    return this;
+  }
 }
 
 class MockSheet {
@@ -139,6 +148,7 @@ class MockSheet {
     this._cells = []; this._maxRows = 1000; this._maxCols = 26;
     this._checks = new Set();
     this._fmt = new Map();
+    this._dv = new Map();
     this._proxy = strict(this, 'Sheet');
   }
   getName() { return this._name; }
@@ -202,6 +212,15 @@ class MockSheet {
   protect() {
     const p = strict({ __protection: true }, 'Protection');
     return p;
+  }
+  /** Sheets rejects a scripted write that breaks a "reject input" list rule (blank is always allowed). */
+  _checkRule(r, c, v) {
+    const rule = this._dv.get(`${r}:${c}`);
+    if (!rule || rule.allowInvalid || !rule.list || v === '' || v === null) return;
+    if (rule.list.indexOf(String(v)) >= 0) return;
+    const a1 = new MockRange(this, r, c, 1, 1).getA1Notation();
+    throw new Error(`The data you entered in cell ${a1} violates the data validation rules set on this cell. ` +
+      `Please enter one of the following values: ${rule.list.join(', ')}.`);
   }
   _get(r, c) {
     const row = this._cells[r - 1];
@@ -299,8 +318,14 @@ function createGas(options = {}) {
     },
   }, 'Ui');
 
+  // Records only what has data semantics: list rules and whether invalid input is allowed (Sheets default: true).
   const dvBuilder = () => {
-    const b = strict({ build: () => ({ __dv: true }) }, 'DataValidationBuilder');
+    const spec = { list: null, allowInvalid: true };
+    const b = strict({
+      requireValueInList: (list) => { spec.list = list.map(String); return b; },
+      setAllowInvalid: (yes) => { spec.allowInvalid = !!yes; return b; },
+      build: () => ({ __dv: true, list: spec.list, allowInvalid: spec.allowInvalid }),
+    }, 'DataValidationBuilder');
     return b;
   };
 
@@ -398,6 +423,13 @@ function createGas(options = {}) {
 
   const DriveApp = strict({
     getFileById: (id) => strict({ setTrashed: (b) => { if (b) state.trashed.push(id); } }, 'File'),
+    getFilesByName: (name) => {
+      const ids = Object.keys(state.spreadsheets).filter((id) => state.spreadsheets[id]._name === name && !state.trashed.includes(id));
+      return strict({
+        hasNext: () => ids.length > 0,
+        next: () => { const id = ids.shift(); if (!id) throw new Error('No more files'); return DriveApp.getFileById(id); },
+      }, 'FileIterator');
+    },
   }, 'DriveApp');
 
   return {

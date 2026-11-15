@@ -1,6 +1,6 @@
 'use strict';
 /**
- * npm test — runs (1) the shared in-sheet suite (T1–T8, B01–B20) against the strict GAS mock and
+ * npm test — runs (1) the shared in-sheet suite (T1–T8, B01–B22) against the strict GAS mock and
  * (2) Node-only integration checks of the public entry points (setup, triggers, menu, locks, LIVE mail,
  * demo clock, web app, test runner). Exit code 1 on any failure.
  */
@@ -215,18 +215,33 @@ check('Node TZ is Asia/Kolkata (matches appsscript.json)', () => {
     app.menuClockReal();
   });
 
-  check('Menu "Run all tests": sandbox created, results written to host, sandbox trashed', () => {
+  check('Test menu: parts run separately (6-min limit), results accumulate to all 30, sandboxes trashed', () => {
     const before = Object.keys(gas.state.spreadsheets).length;
-    const res = app.menuTestsAll();
-    void res;
-    const sh = S('Test Results');
-    const rows = sh.getRange(2, 1, sh.getLastRow() - 1, 6).getValues();
-    assert.strictEqual(rows.length, 30, 'all tests listed');
+    const parts = app.testParts_();
+    assert.ok(parts.length >= 4, 'suite split into parts');
+    // every test belongs to exactly one part, and no part is bigger than 8 tests
+    const ids = app.testCases_().map((tc) => tc.id);
+    const owned = ids.map((id) => parts.filter((p) => app.testsInPart_(p.key).some((tc) => tc.id === id)).length);
+    assert.ok(owned.every((n) => n === 1), 'each test in exactly one part');
+    parts.forEach((p) => assert.ok(app.testsInPart_(p.key).length <= 8, p.key + ' too big'));
+    // a leftover sandbox from a run Google killed is cleaned up by the next run
+    gas.newSpreadsheet(app.testSandboxName_());
+    app[parts[0].fn]();
+    let sh = S('Test Results');
+    let rows = sh.getRange(2, 1, sh.getLastRow() - 1, 6).getValues();
+    assert.strictEqual(rows.length, 30, 'all tests always listed');
+    assert.ok(rows.filter((r) => r[2] === 'NOT RUN').length === 30 - app.testsInPart_(parts[0].key).length, 'others shown as not run yet');
+    assert.ok(String(rows[29][3]).includes(parts[parts.length - 1].label), 'not-run row says which menu item runs it');
+    parts.slice(1).forEach((p) => app[p.fn]());
+    sh = S('Test Results');
+    rows = sh.getRange(2, 1, sh.getLastRow() - 1, 6).getValues();
+    assert.strictEqual(rows.length, 30, 'no duplicate rows after re-runs');
+    assert.strictEqual(rows.map((r) => r[0]).join(','), ids.join(','), 'kept in suite order');
     const failed = rows.filter((r) => r[2] !== 'PASS');
     assert.strictEqual(failed.length, 0, 'failures: ' + failed.map((r) => r[0]).join(','));
-    assert.strictEqual(Object.keys(gas.state.spreadsheets).length, before + 1, 'one sandbox created');
-    assert.strictEqual(gas.state.trashed.length, 1, 'sandbox trashed');
-    assert.ok(gas.state.alerts.some((a) => a.includes('30 / 30 tests passed')), 'summary alert');
+    assert.strictEqual(Object.keys(gas.state.spreadsheets).length, before + 1 + parts.length, 'one sandbox per part');
+    assert.strictEqual(gas.state.trashed.length, parts.length + 1, 'every sandbox trashed, including the leftover');
+    assert.ok(gas.state.alerts.some((a) => a.includes('30 / 30')), 'summary covers the whole suite');
   });
 
   check('Emails produced anywhere contain no "undefined"/"NaN"/"Invalid Date"', () => {

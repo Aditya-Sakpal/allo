@@ -2239,7 +2239,10 @@ function formatTasks_(ss, sh, team) {
   }
   if (idx['Proof Type']) {
     sh.getRange(2, idx['Proof Type'], rows, 1).setDataValidation(SpreadsheetApp.newDataValidation()
-      .requireValueInList([PROOF.TICKET, PROOF.DAILY], true).setAllowInvalid(false).build());
+      // Warn, don't reject: a rejected value never reaches the engine, so Health could not explain it,
+      // and a strict rule makes Sheets refuse scripted writes (fail soft for data, CLAUDE.md rule 9).
+      .requireValueInList([PROOF.TICKET, PROOF.DAILY], true).setAllowInvalid(true)
+      .setHelpText('Ticket ID or Daily Update. Anything else is flagged in the Health column.').build());
   }
   if (idx['Assigned To']) {
     sh.getRange(2, idx['Assigned To'], rows, 1).setDataValidation(SpreadsheetApp.newDataValidation()
@@ -2499,10 +2502,7 @@ function onOpen() {
       .addItem('Jump to next cut-off + 1 min (resolve deadline)', 'menuClockResolveDeadline')
       .addSeparator()
       .addItem('Back to real time', 'menuClockReal'))
-    .addSubMenu(ui.createMenu('🧪 Automated tests')
-      .addItem('Run core tests (T1–T8)', 'menuTestsCore')
-      .addItem('Run robustness tests (B01–B22)', 'menuTestsBreak')
-      .addItem('Run all tests', 'menuTestsAll'))
+    .addSubMenu(testParts_().reduce(function (m, p) { return m.addItem(p.label, p.fn); }, ui.createMenu('🧪 Automated tests')))
     .addSeparator()
     .addSubMenu(ui.createMenu('🛠 Admin')
       .addItem('Setup / repair sheets', 'setupSystem')
@@ -2608,9 +2608,12 @@ function menuClockResolveDeadline() {
 }
 function menuClockReal() { moveDemoClock_(function () { return null; }); }
 
+// One entry point per part of testParts_(): each must finish inside Google's 6-minute limit.
 function menuTestsCore() { runTestsToSheet_('core'); }
-function menuTestsBreak() { runTestsToSheet_('break'); }
-function menuTestsAll() { runTestsToSheet_('all'); }
+function menuTestsBreak1() { runTestsToSheet_('break1'); }
+function menuTestsBreak2() { runTestsToSheet_('break2'); }
+function menuTestsBreak3() { runTestsToSheet_('break3'); }
+function menuTestsBreak4() { runTestsToSheet_('break4'); }
 
 /* ───────────── web app ───────────── */
 
@@ -3457,14 +3460,49 @@ function testCases_() {
   ];
 }
 
-/** Runs the suite on a sandbox spreadsheet. group: 'core' | 'break' | 'all'. */
-function runTestSuiteCore_(sandboxSs, group, budgetMs) {
+/*
+ * Google stops any single script run after 6 minutes, and in a real spreadsheet each test takes
+ * ~30 s (sheet creation, protection, rendering). So the menu runs the suite in parts of at most
+ * 8 tests, and every run merges its results into one Test Results sheet that always lists all tests.
+ */
+function testParts_() {
+  return [
+    { key: 'core', label: 'Run core tests (T1–T8)', fn: 'menuTestsCore', from: 'T1', to: 'T8' },
+    { key: 'break1', label: 'Run robustness tests 1/4 (B01–B06)', fn: 'menuTestsBreak1', from: 'B01', to: 'B06' },
+    { key: 'break2', label: 'Run robustness tests 2/4 (B07–B12)', fn: 'menuTestsBreak2', from: 'B07', to: 'B12' },
+    { key: 'break3', label: 'Run robustness tests 3/4 (B13–B17)', fn: 'menuTestsBreak3', from: 'B13', to: 'B17' },
+    { key: 'break4', label: 'Run robustness tests 4/4 (B18–B22)', fn: 'menuTestsBreak4', from: 'B18', to: 'B22' },
+  ];
+}
+
+function testSandboxName_() { return 'Allo Tasks — test sandbox (auto-deleted)'; }
+
+/** IDs are zero-padded within a prefix, so a string range is exact. */
+function testsInPart_(key) {
+  if (key === 'all') return testCases_();
+  const part = testParts_().filter(function (p) { return p.key === key; })[0];
+  if (!part) throw new Error('Unknown test part ' + key);
+  return testCases_().filter(function (tc) {
+    return tc.id.charAt(0) === part.from.charAt(0) && tc.id.length === part.from.length &&
+      tc.id >= part.from && tc.id <= part.to;
+  });
+}
+
+function partOfTest_(id) {
+  return testParts_().filter(function (p) {
+    return testsInPart_(p.key).some(function (tc) { return tc.id === id; });
+  })[0];
+}
+
+/** Runs one part ('core', 'break1'…, or 'all') on a sandbox spreadsheet. */
+function runTestSuiteCore_(sandboxSs, part, budgetMs) {
   const sb = makeSandbox_(sandboxSs);
   const started = Date.now();
   const results = [];
-  testCases_().filter(function (tc) { return group === 'all' || !group || tc.group === group; }).forEach(function (tc) {
+  testsInPart_(part || 'all').forEach(function (tc) {
     if (budgetMs && Date.now() - started > budgetMs) {
-      results.push({ id: tc.id, name: tc.name, result: 'NOT RUN', evidence: 'Time budget reached — run this group on its own.', ms: 0 });
+      results.push({ id: tc.id, name: tc.name, result: 'NOT RUN', ms: 0,
+        evidence: 'Stopped before this test to stay inside Google’s 6-minute limit. Run this part again.' });
       return;
     }
     const kit = testKit_();
@@ -3480,34 +3518,57 @@ function runTestSuiteCore_(sandboxSs, group, budgetMs) {
   return results;
 }
 
+/** Merges this run's results into the sheet: one row per test, in suite order. Returns every row. */
 function writeTestResults_(host, results) {
   const sh = host.getSheetByName(SHEETS.TESTS) || ensureTableSheet_(host, SHEETS.TESTS, TEST_HEADERS);
-  clearDataRows_(sh);
-  const ranAt = new Date();
-  const rows = results.map(function (r) { return [r.id, r.name, r.result, truncate_(r.evidence, 45000), r.ms, ranAt]; });
-  appendRows_(sh, rows, TEST_HEADERS.length);
-  if (rows.length) {
-    sh.getRange(2, 3, rows.length, 1).setBackgrounds(results.map(function (r) {
-      return [r.result === 'PASS' ? COLORS.OK_BG : (r.result === 'FAIL' ? COLORS.BAD_BG : COLORS.WARN_BG)];
-    }));
-    sh.getRange(2, 1, rows.length, TEST_HEADERS.length).setVerticalAlignment('top');
-    sh.getRange(2, 4, rows.length, 1).setWrap(true);
+  const prev = {};
+  if (sh.getLastRow() > 1) {
+    sh.getRange(2, 1, sh.getLastRow() - 1, TEST_HEADERS.length).getValues().forEach(function (r) { prev[String(r[0])] = r; });
   }
+  const ranAt = new Date();
+  const fresh = {};
+  results.forEach(function (r) { fresh[r.id] = [r.id, r.name, r.result, truncate_(r.evidence, 45000), r.ms, ranAt]; });
+  const rows = testCases_().map(function (tc) {
+    if (fresh[tc.id]) return fresh[tc.id];
+    const old = prev[tc.id];
+    if (old && old[2] !== 'NOT RUN') return [tc.id, tc.name, old[2], old[3], old[4], old[5]];
+    return [tc.id, tc.name, 'NOT RUN', 'Not run yet: ⚙️ Task System → 🧪 Automated tests → ' + partOfTest_(tc.id).label + '.', '', ''];
+  });
+  clearDataRows_(sh);
+  appendRows_(sh, rows, TEST_HEADERS.length);
+  sh.getRange(2, 3, rows.length, 1).setBackgrounds(rows.map(function (r) {
+    return [r[2] === 'PASS' ? COLORS.OK_BG : (r[2] === 'FAIL' ? COLORS.BAD_BG : COLORS.WARN_BG)];
+  }));
+  sh.getRange(2, 1, rows.length, TEST_HEADERS.length).setVerticalAlignment('top');
+  sh.getRange(2, 4, rows.length, 1).setWrap(true);
+  return rows;
 }
 
-function runTestsToSheet_(group) {
+/** A run Google kills at 6 minutes never reaches its clean-up, so each run also bins earlier leftovers. */
+function trashTestSandboxes_() {
+  try {
+    const files = DriveApp.getFilesByName(testSandboxName_());
+    while (files.hasNext()) files.next().setTrashed(true);
+  } catch (e) { /* clean-up is best effort */ }
+}
+
+function runTestsToSheet_(part) {
   const host = SpreadsheetApp.getActiveSpreadsheet();
-  const sandbox = SpreadsheetApp.create('Allo Tasks — test sandbox (auto-deleted)');
+  trashTestSandboxes_();
+  const sandbox = SpreadsheetApp.create(testSandboxName_());
   let results;
   try {
-    results = runTestSuiteCore_(sandbox, group, 300000);
+    results = runTestSuiteCore_(sandbox, part, 240000);
   } finally {
     try { DriveApp.getFileById(sandbox.getId()).setTrashed(true); } catch (e) { /* sandbox clean-up is best effort */ }
   }
-  writeTestResults_(host, results);
+  const rows = writeTestResults_(host, results);
   host.setActiveSheet(host.getSheetByName(SHEETS.TESTS));
-  const pass = results.filter(function (r) { return r.result === 'PASS'; }).length;
-  alert_(pass + ' / ' + results.length + ' tests passed. Details and evidence are in the "' + SHEETS.TESTS + '" sheet.');
+  const passed = function (list, pick) { return list.filter(function (r) { return pick(r) === 'PASS'; }).length; };
+  const notRun = rows.filter(function (r) { return r[2] === 'NOT RUN'; }).length;
+  alert_('This part: ' + passed(results, function (r) { return r.result; }) + ' / ' + results.length + ' passed.\n' +
+    'Whole suite so far: ' + passed(rows, function (r) { return r[2]; }) + ' / ' + rows.length + ' passed' +
+    (notRun ? ', ' + notRun + ' not run yet.' : '.') + '\nDetails and evidence are in the "' + SHEETS.TESTS + '" sheet.');
   return results;
 }
 

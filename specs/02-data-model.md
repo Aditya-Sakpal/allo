@@ -37,7 +37,7 @@ Invalid values fall back to the default and are reported in the Status column an
 |---|---|---|---|---|---|---|---|---|---|
 
 - **Frequency:** `Daily` (working days) or `Every N days` (N = 2…366; also `7`, `Weekly`, `Monthly` = 30).
-- **Proof Type:** `Ticket ID` or `Daily Update`.
+- **Proof Type:** `Ticket ID` or `Daily Update`. The dropdown warns but does not reject; anything else is flagged in Health.
 - **First Due Date:** the anchor. Slot *k* = First Due + k·N days. If a slot falls on a non-working day, it is **due** on the next working day, but the anchor does not move.
 - **Health** is written by the engine: `✅ OK · open cycle due …`, `⚠️ <problem>`, or `⏸ Inactive`.
 

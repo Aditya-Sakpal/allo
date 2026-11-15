@@ -65,7 +65,7 @@ The **Demo clock** moves a simulated time (`Config → SIMULATED_NOW`) and runs 
 
 ## 5. Automated proof
 
-**⚙️ Task System → 🧪 Automated tests → Run core tests (T1–T8)**, then **Run robustness tests**. The suite runs on a temporary copy, so your data is never touched, and writes PASS/FAIL with evidence lines to **Test Results**. Each group finishes well within Apps Script's 6-minute limit.
+**⚙️ Task System → 🧪 Automated tests**, then run each of the five items in turn: core tests (T1–T8), then robustness tests 1/4 to 4/4 (B01–B22). Google stops any single script run after 6 minutes, so the suite is split into parts of at most 8 tests (2–4 minutes each). The suite runs on a temporary copy, so your data is never touched. Each part merges its PASS/FAIL and evidence lines into **Test Results**, which always lists all 30 tests; ones not run yet say which menu item runs them.
 
 Locally:
 
