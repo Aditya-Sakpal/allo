@@ -85,7 +85,9 @@ function makeSandbox_(ss) {
     if (!sh) throw new Error('No sheet ' + sheetName);
     const grid = Array.isArray(values) ? values : [[values]];
     const range = sh.getRange(row, col, grid.length, grid[0].length);
-    range.setValues(grid);
+    // Typing "=…" into a plain-text cell stores text; a script write would make a formula instead,
+    // so the helper writes what the UI would store.
+    range.setValues(grid.map(function (r) { return r.map(textCell_); }));
     return handleEditCore_(sb.ctx(), {
       range: range,
       source: ss,
@@ -775,12 +777,13 @@ function test_B22_(sb, t) {
   sb.run(true);
   const D = SHEETS.DASHBOARD;
   const dRow = sb.rowOf(D, 'T01-20261116');
-  t.eq(sb.cell(D, dRow, DASH.RECENT_PROOF_COL), evil, 'Dashboard shows the text verbatim');
+  t.eq(fromCell_(sb.cell(D, dRow, DASH.RECENT_PROOF_COL)), evil, 'Dashboard shows the text verbatim (a leading text-marker apostrophe aside)');
   t.eq(sb.formula(D, dRow, DASH.RECENT_PROOF_COL), '', 'Dashboard does NOT evaluate it as a formula');
   const eRow = sb.rowOf(tab, 'T01-20261116');
-  t.eq(sb.cell(tab, eRow, 6), evil, 'Employee tab shows it verbatim');
+  t.eq(fromCell_(sb.cell(tab, eRow, 6)), evil, 'Employee tab shows it verbatim');
   t.eq(sb.formula(tab, eRow, 6), '', 'Employee tab does NOT evaluate it as a formula');
   t.eq(sb.formula(SHEETS.CYCLES, sb.rowOf(SHEETS.CYCLES, 'T01-20261116'), 13), '', 'Ledger stores it as text');
+  t.eq(sb.cycle('T01-20261116').proof, evil, 'Ledger reads back exactly what was typed');
   t.has(sb.formula(tab, eRow, 5), 'HYPERLINK', 'Our own share link is still a working formula');
   t.eq(sb.complete('T02-20261116', '=1+1').code, 'BAD_TICKET', 'Formula-looking ticket rejected');
 }

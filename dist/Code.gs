@@ -250,6 +250,19 @@ function durationText_(ms) {
   return m + 'm';
 }
 
+/*
+ * A script write turns any string starting with "=" into a formula, even in a plain-text ('@') cell,
+ * so user text like =IMPORTDATA(...) would run. A leading apostrophe forces text. Sheets either
+ * consumes it or (in some text cells) keeps it, so readers strip it again and both cases agree.
+ */
+function textCell_(v) {
+  return typeof v === 'string' && /^[=+\-@]/.test(v) ? "'" + v : v;
+}
+
+function fromCell_(v) {
+  return typeof v === 'string' && /^'[=+\-@]/.test(v) ? v.slice(1) : v;
+}
+
 function escapeHtml_(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -322,7 +335,7 @@ function readConfigRaw_(ss) {
   const sh = ss.getSheetByName(SHEETS.CONFIG);
   const raw = {};
   if (!sh || sh.getLastRow() < 2) return raw;
-  const vals = sh.getRange(2, 1, sh.getLastRow() - 1, 2).getDisplayValues();
+  const vals = sh.getRange(2, 1, sh.getLastRow() - 1, 2).getDisplayValues().map(function (r) { return r.map(fromCell_); });
   vals.forEach(function (r) {
     const k = String(r[0]).trim();
     if (k) raw[k] = String(r[1]);
@@ -602,8 +615,9 @@ function readTable_(sheet, fields) {
     return res;
   }
   const rng = sheet.getRange(1, 1, lastRow, lastCol);
-  const vals = rng.getValues();
-  const disp = rng.getDisplayValues();
+  const unescape = function (row) { return row.map(fromCell_); };
+  const vals = rng.getValues().map(unescape);
+  const disp = rng.getDisplayValues().map(unescape);
   const header = vals[0].map(function (h) { return String(h).trim(); });
   fields.forEach(function (f) {
     const i = header.indexOf(f[1]);
@@ -631,7 +645,7 @@ function appendRows_(sh, rows, width) {
   ensureRows_(sh, start + rows.length - 1);
   const data = rows.map(function (r) {
     const out = [];
-    for (let i = 0; i < width; i++) out.push(r[i] === undefined || r[i] === null ? '' : r[i]);
+    for (let i = 0; i < width; i++) out.push(r[i] === undefined || r[i] === null ? '' : textCell_(r[i]));
     return out;
   });
   sh.getRange(start, 1, data.length, width).setValues(data);
@@ -663,10 +677,10 @@ function normalizeCycle_(r) {
 }
 
 function cycleToRow_(c) {
-  if (c._bad) return CYCLE_FIELDS.map(function (f) { return c._orig[f[0]]; });
+  if (c._bad) return CYCLE_FIELDS.map(function (f) { return textCell_(c._orig[f[0]]); });
   return CYCLE_FIELDS.map(function (f) {
     const v = c[f[0]];
-    return v === null || v === undefined ? '' : v;
+    return v === null || v === undefined ? '' : textCell_(v);
   });
 }
 
@@ -1463,6 +1477,7 @@ function addRow_(g, cells, opts) {
     if (v && typeof v === 'object' && !isDate_(v) && v.formula) { v = v.formula; f = FMT.PLAIN; }
     else if (isDate_(v)) f = FMT.VIEW_DT;
     else if (typeof v === 'boolean' || typeof v === 'number') f = FMT.PLAIN;
+    else v = textCell_(v);
     vals.push(v);
     fm.push(f);
     bg.push((opts.cellBg && opts.cellBg[i]) || opts.bg || COLORS.WHITE);
@@ -1845,7 +1860,8 @@ function handleEmployeeEdit_(ctx, e, sh) {
   const last = r0 + nr - 1;
   if (last < first) return { handled: false, reason: 'title/header rows' };
 
-  const block = sh.getRange(first, 1, last - first + 1, EMP_VIEW.RESULT_COL).getValues();
+  const block = sh.getRange(first, 1, last - first + 1, EMP_VIEW.RESULT_COL).getValues()
+    .map(function (row) { return row.map(fromCell_); });
   // The 15-minute refresh may have redrawn the tab while the user was typing: the cell then no longer
   // holds what they typed and the row may now be a different task. Never guess — ask them to re-enter.
   if (nr === 1 && nc === 1 && e.value !== undefined && e.value !== null &&
@@ -1904,7 +1920,7 @@ function annotateEmployeeRows_(sh, failures) {
     const i = o.id ? ids.indexOf(o.id) : -1;
     if (i < 0) return;
     const r = EMP_VIEW.FIRST_ROW + i;
-    sh.getRange(r, EMP_VIEW.INPUT_COL, 1, 2).setValues([[String(o.input), '❌ ' + o.msg]]);
+    sh.getRange(r, EMP_VIEW.INPUT_COL, 1, 2).setValues([[textCell_(String(o.input)), '❌ ' + o.msg]]);
   });
 }
 
@@ -1926,7 +1942,7 @@ function handleDashboardEdit_(ctx, e, sh) {
   if (!touches(DASH.ACK_COL) && !touches(DASH.NOTE_COL) && !touches(DASH.ACTION_COL)) return { handled: false, reason: 'not an editable column' };
 
   const titles = sh.getRange(1, TITLE_COL, r0 + nr - 1, 1).getValues().map(function (r) { return r[0]; });
-  const block = sh.getRange(r0, 1, nr, DASH.WIDTH).getValues();
+  const block = sh.getRange(r0, 1, nr, DASH.WIDTH).getValues().map(function (row) { return row.map(fromCell_); });
   const m = loadModel_(ctx);
   const actor = actorFromEvent_(e, null) || 'Manager (dashboard)';
   const outcomes = [];
@@ -2356,7 +2372,7 @@ function writeTableRows_(sh, fields, rows) {
   const out = rows.map(function (r) {
     const line = [];
     for (let i = 0; i < width; i++) line.push('');
-    fields.forEach(function (f, i) { if (idx[f[1]]) line[idx[f[1]] - 1] = r[i] === undefined || r[i] === null ? '' : r[i]; });
+    fields.forEach(function (f, i) { if (idx[f[1]]) line[idx[f[1]] - 1] = r[i] === undefined || r[i] === null ? '' : textCell_(r[i]); });
     return line;
   });
   const start = sh.getLastRow() + 1;
@@ -2723,7 +2739,9 @@ function makeSandbox_(ss) {
     if (!sh) throw new Error('No sheet ' + sheetName);
     const grid = Array.isArray(values) ? values : [[values]];
     const range = sh.getRange(row, col, grid.length, grid[0].length);
-    range.setValues(grid);
+    // Typing "=…" into a plain-text cell stores text; a script write would make a formula instead,
+    // so the helper writes what the UI would store.
+    range.setValues(grid.map(function (r) { return r.map(textCell_); }));
     return handleEditCore_(sb.ctx(), {
       range: range,
       source: ss,
@@ -3413,12 +3431,13 @@ function test_B22_(sb, t) {
   sb.run(true);
   const D = SHEETS.DASHBOARD;
   const dRow = sb.rowOf(D, 'T01-20261116');
-  t.eq(sb.cell(D, dRow, DASH.RECENT_PROOF_COL), evil, 'Dashboard shows the text verbatim');
+  t.eq(fromCell_(sb.cell(D, dRow, DASH.RECENT_PROOF_COL)), evil, 'Dashboard shows the text verbatim (a leading text-marker apostrophe aside)');
   t.eq(sb.formula(D, dRow, DASH.RECENT_PROOF_COL), '', 'Dashboard does NOT evaluate it as a formula');
   const eRow = sb.rowOf(tab, 'T01-20261116');
-  t.eq(sb.cell(tab, eRow, 6), evil, 'Employee tab shows it verbatim');
+  t.eq(fromCell_(sb.cell(tab, eRow, 6)), evil, 'Employee tab shows it verbatim');
   t.eq(sb.formula(tab, eRow, 6), '', 'Employee tab does NOT evaluate it as a formula');
   t.eq(sb.formula(SHEETS.CYCLES, sb.rowOf(SHEETS.CYCLES, 'T01-20261116'), 13), '', 'Ledger stores it as text');
+  t.eq(sb.cycle('T01-20261116').proof, evil, 'Ledger reads back exactly what was typed');
   t.has(sb.formula(tab, eRow, 5), 'HYPERLINK', 'Our own share link is still a working formula');
   t.eq(sb.complete('T02-20261116', '=1+1').code, 'BAD_TICKET', 'Formula-looking ticket rejected');
 }

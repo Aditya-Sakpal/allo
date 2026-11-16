@@ -5,6 +5,10 @@
  *  - getRange() beyond the sheet's max rows/cols throws (as in Apps Script)
  *  - setValues()/setBackgrounds()/... throw on dimension mismatch
  *  - insertCheckboxes() sets every cell in the range to FALSE
+ *  - like a real script write, a string starting with "=" becomes a formula EVEN in a plain-text ('@') cell
+ *    (getValue then returns the computed result: the label of a HYPERLINK, otherwise "#ERROR!"), and a
+ *    leading apostrophe forces text and is consumed. Option keepApostropheInTextCells models the other
+ *    possible Sheets behaviour (apostrophe kept literally in '@' cells) so code is proven against both.
  *  - a "reject input" list validation (setAllowInvalid(false)) makes setValue(s) of any other value throw,
  *    with Sheets' own message; Sheet.clear() keeps validations (only clearDataValidations() removes them)
  *  - getLastRow()/getLastColumn() count any non-empty value (FALSE included)
@@ -26,6 +30,13 @@ function strict(target, label) {
       return function () { return recv; };
     },
   });
+}
+
+const isFormula = (v) => v !== null && typeof v === 'object' && typeof v.__f === 'string';
+/** The mock does not evaluate formulas: HYPERLINK shows its label, anything else an error value. */
+function computed(f) {
+  const m = /^=HYPERLINK\(.*,\s*"((?:[^"]|"")*)"\)$/.exec(f);
+  return m ? m[1].replace(/""/g, '"') : '#ERROR!';
 }
 
 function pad(n) { return (n < 10 ? '0' : '') + n; }
@@ -77,7 +88,7 @@ class MockRange {
       const row = [];
       for (let j = 0; j < this._nc; j++) {
         const v = this._sheet._get(this._r + i, this._c + j);
-        row.push(isDateLike(v) ? new v.constructor(v.getTime()) : v);
+        row.push(isFormula(v) ? computed(v.__f) : isDateLike(v) ? new v.constructor(v.getTime()) : v);
       }
       out.push(row);
     }
@@ -86,11 +97,9 @@ class MockRange {
   getDisplayValues() { return this.getValues().map((r) => r.map(displayOf)); }
   getValue() { return this.getValues()[0][0]; }
   getDisplayValue() { return displayOf(this.getValue()); }
-  /** Like Sheets: a string starting with "=" is a formula unless the cell is formatted as plain text ('@'). */
   getFormula() {
     const v = this._sheet._get(this._r, this._c);
-    const fmt = this._sheet._fmt.get(`${this._r}:${this._c}`);
-    return typeof v === 'string' && v.charAt(0) === '=' && fmt !== '@' ? v : '';
+    return isFormula(v) ? v.__f : '';
   }
   getNumberFormat() { return this._sheet._fmt.get(`${this._r}:${this._c}`) || 'General'; }
   setValues(data) {
@@ -102,13 +111,13 @@ class MockRange {
       if (typeof v === 'string' && v.length > 50000) throw new Error('[gas-mock] setValues: cell exceeds 50000 characters');
     }));
     data.forEach((row, i) => row.forEach((v, j) => this._sheet._checkRule(this._r + i, this._c + j, v)));
-    data.forEach((row, i) => row.forEach((v, j) => this._sheet._set(this._r + i, this._c + j, v === null ? '' : v)));
+    data.forEach((row, i) => row.forEach((v, j) => this._sheet._write(this._r + i, this._c + j, v === null ? '' : v)));
     return this;
   }
   setValue(v) {
     if (v === undefined) throw new Error('[gas-mock] setValue: undefined');
     this._each((r, c) => this._sheet._checkRule(r, c, v));
-    this._each((r, c) => this._sheet._set(r, c, v === null ? '' : v));
+    this._each((r, c) => this._sheet._write(r, c, v === null ? '' : v));
     return this;
   }
   clearContent() { this._each((r, c) => this._sheet._set(r, c, '')); return this; }
@@ -222,6 +231,15 @@ class MockSheet {
     throw new Error(`The data you entered in cell ${a1} violates the data validation rules set on this cell. ` +
       `Please enter one of the following values: ${rule.list.join(', ')}.`);
   }
+  /** What a script write stores: formulas are parsed whatever the number format; "'" forces text. */
+  _write(r, c, v) {
+    if (typeof v === 'string' && v.charAt(0) === "'") {
+      const keep = this._ss._state.options.keepApostropheInTextCells && this._fmt.get(`${r}:${c}`) === '@';
+      return this._set(r, c, keep ? v : v.slice(1));
+    }
+    if (typeof v === 'string' && v.length > 1 && v.charAt(0) === '=') return this._set(r, c, { __f: v });
+    return this._set(r, c, v);
+  }
   _get(r, c) {
     const row = this._cells[r - 1];
     const v = row ? row[c - 1] : undefined;
@@ -285,6 +303,7 @@ function createGas(options = {}) {
     alerts: [],
     uiResponse: 'YES',
     seq: 0,
+    options,
   };
 
   const newSpreadsheet = (name) => {

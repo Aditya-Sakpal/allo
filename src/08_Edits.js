@@ -53,7 +53,8 @@ function handleEmployeeEdit_(ctx, e, sh) {
   const last = r0 + nr - 1;
   if (last < first) return { handled: false, reason: 'title/header rows' };
 
-  const block = sh.getRange(first, 1, last - first + 1, EMP_VIEW.RESULT_COL).getValues();
+  const block = sh.getRange(first, 1, last - first + 1, EMP_VIEW.RESULT_COL).getValues()
+    .map(function (row) { return row.map(fromCell_); });
   // The 15-minute refresh may have redrawn the tab while the user was typing: the cell then no longer
   // holds what they typed and the row may now be a different task. Never guess — ask them to re-enter.
   if (nr === 1 && nc === 1 && e.value !== undefined && e.value !== null &&
@@ -112,7 +113,7 @@ function annotateEmployeeRows_(sh, failures) {
     const i = o.id ? ids.indexOf(o.id) : -1;
     if (i < 0) return;
     const r = EMP_VIEW.FIRST_ROW + i;
-    sh.getRange(r, EMP_VIEW.INPUT_COL, 1, 2).setValues([[String(o.input), '❌ ' + o.msg]]);
+    sh.getRange(r, EMP_VIEW.INPUT_COL, 1, 2).setValues([[textCell_(String(o.input)), '❌ ' + o.msg]]);
   });
 }
 
@@ -134,7 +135,7 @@ function handleDashboardEdit_(ctx, e, sh) {
   if (!touches(DASH.ACK_COL) && !touches(DASH.NOTE_COL) && !touches(DASH.ACTION_COL)) return { handled: false, reason: 'not an editable column' };
 
   const titles = sh.getRange(1, TITLE_COL, r0 + nr - 1, 1).getValues().map(function (r) { return r[0]; });
-  const block = sh.getRange(r0, 1, nr, DASH.WIDTH).getValues();
+  const block = sh.getRange(r0, 1, nr, DASH.WIDTH).getValues().map(function (row) { return row.map(fromCell_); });
   const m = loadModel_(ctx);
   const actor = actorFromEvent_(e, null) || 'Manager (dashboard)';
   const outcomes = [];

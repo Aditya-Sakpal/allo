@@ -32,6 +32,7 @@ function addRow_(g, cells, opts) {
     if (v && typeof v === 'object' && !isDate_(v) && v.formula) { v = v.formula; f = FMT.PLAIN; }
     else if (isDate_(v)) f = FMT.VIEW_DT;
     else if (typeof v === 'boolean' || typeof v === 'number') f = FMT.PLAIN;
+    else v = textCell_(v);
     vals.push(v);
     fm.push(f);
     bg.push((opts.cellBg && opts.cellBg[i]) || opts.bg || COLORS.WHITE);

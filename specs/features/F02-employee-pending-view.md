@@ -35,7 +35,7 @@ Status wording: `Due in N days`, `Due today 18:00`, `OVERDUE by 2h 10m`, `OVERDU
 - If the lock is busy for more than 25 s: `⏳ System busy — please press Enter on the cell again`.
 - **Refresh race:** if the engine redrew the tab between the keystroke and the handler (the cell no longer holds what was typed), nothing is applied, because the row may now be a different task. The user is asked to re-enter (B21).
 - Only the edited employee's tab and the dashboard are re-rendered after an edit, which keeps response time low.
-- All user text is written as plain text (`@`); only the system's own share link is a formula, so formula injection is impossible (B22).
+- All user text is written as plain text (`@`), and any text starting with `=`, `+`, `-` or `@` is written with a leading apostrophe (`textCell_`), because a script write turns `=…` into a formula even in a plain-text cell (found by B22 on a real sheet). Readers strip that apostrophe again (`fromCell_`), so the result is identical whether Sheets consumes it or keeps it. Only the system's own share link is a formula (B22; `npm test` runs the suite under both apostrophe behaviours).
 - Input cells are plain-text formatted, so `11-12-2026` stays text and is not turned into a date.
 - The tab has warning-level protection on everything except the input column.
 - Tabs are created for new active employees and deleted for removed or inactive ones. They are views only, so no data is lost.

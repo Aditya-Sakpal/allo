@@ -37,7 +37,15 @@ check('Node TZ is Asia/Kolkata (matches appsscript.json)', () => {
   }
 }
 
-// ── 2. node-only integration checks ───────────────────────────────────────────────────
+// Sheets may keep a forcing apostrophe literally in plain-text cells instead of consuming it.
+// The code must give the same results either way, so the whole suite runs again in that mode.
+check('Whole suite also passes when Sheets keeps the apostrophe in plain-text cells', () => {
+  const { app, gas } = loadApp({ keepApostropheInTextCells: true });
+  const failed = app.runTestSuiteCore_(gas.newSpreadsheet('sandbox-apostrophe'), 'all', 0).filter((r) => r.result !== 'PASS');
+  assert.strictEqual(failed.length, 0, failed.map((r) => r.id + ': ' + r.evidence).join('\n'));
+});
+
+// ── 2. node-only integration checks───────────────────────────────────────────────────
 {
   const { app, gas } = loadApp({ activeUser: 'owner@allo.test' });
   const host = gas.newSpreadsheet('Allo Tasks');

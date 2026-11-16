@@ -32,7 +32,7 @@ npm run build     # writes dist/Code.gs + dist/appsscript.json (single paste-rea
 5. **Columns are found by header name** (`readTable_`), never by hard-coded index, for input sheets.
 6. **Top level of every `src/*.js` holds only literals and function declarations.** Apps Script loads files in arbitrary order.
 7. **Times:** use `ctx.now()` and the helpers in `03_Schedule.js`. Script and sheet timezone = `Asia/Kolkata`. Never `new Date()` in core logic.
-8. **User text into cells:** plain-text format (`@`) for IDs and input, so Sheets doesn't auto-convert `11-12-2026` to a date.
+8. **User text into cells:** plain-text format (`@`) for IDs and input, so Sheets doesn't auto-convert `11-12-2026` to a date. Also pass every string through `textCell_` when writing and `fromCell_` when reading: a script write turns `=…` into a formula even in a `@` cell.
 9. **Fail soft for data, loud for code:** bad config or task rows → warnings in Health / dashboard and the engine continues. Programming errors → throw, so the test suite catches them.
 10. **Emails:** batch per recipient per event per run; stamp and save immediately after a successful send; never send in a loop without a stamp check.
 
@@ -48,6 +48,7 @@ npm run build     # writes dist/Code.gs + dist/appsscript.json (single paste-rea
 ## Testing conventions
 - Tests live in `src/12_Tests.js` (`T*` = assignment tests, `B*` = break-it tests). Each one resets the sandbox fixture, sets the clock explicitly (`sb.at('2026-11-16 18:31')`), and asserts with `t.eq / t.ok`, which also produce the evidence text shown in the `Test Results` sheet.
 - Every bug fix gets a regression test first.
+- When the real sheet disagrees with `npm test`, first make the mock reproduce the real failure, then fix the code. Two real-sheet findings so far: strict dropdowns reject script writes (B09), and `=…` becomes a formula even in `@` cells (B22).
 - The mock (`test/gas-mock.js`) is deliberately strict: unknown getters throw, ranges out of bounds throw, and `setValues` size mismatches throw. If you need a new Apps Script API, add it to the mock **faithfully** (check the Apps Script reference) rather than loosening the mock.
 
 ## Definition of done for any change

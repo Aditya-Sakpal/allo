@@ -235,7 +235,7 @@ function writeTableRows_(sh, fields, rows) {
   const out = rows.map(function (r) {
     const line = [];
     for (let i = 0; i < width; i++) line.push('');
-    fields.forEach(function (f, i) { if (idx[f[1]]) line[idx[f[1]] - 1] = r[i] === undefined || r[i] === null ? '' : r[i]; });
+    fields.forEach(function (f, i) { if (idx[f[1]]) line[idx[f[1]] - 1] = r[i] === undefined || r[i] === null ? '' : textCell_(r[i]); });
     return line;
   });
   const start = sh.getLastRow() + 1;

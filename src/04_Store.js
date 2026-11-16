@@ -33,8 +33,9 @@ function readTable_(sheet, fields) {
     return res;
   }
   const rng = sheet.getRange(1, 1, lastRow, lastCol);
-  const vals = rng.getValues();
-  const disp = rng.getDisplayValues();
+  const unescape = function (row) { return row.map(fromCell_); };
+  const vals = rng.getValues().map(unescape);
+  const disp = rng.getDisplayValues().map(unescape);
   const header = vals[0].map(function (h) { return String(h).trim(); });
   fields.forEach(function (f) {
     const i = header.indexOf(f[1]);
@@ -62,7 +63,7 @@ function appendRows_(sh, rows, width) {
   ensureRows_(sh, start + rows.length - 1);
   const data = rows.map(function (r) {
     const out = [];
-    for (let i = 0; i < width; i++) out.push(r[i] === undefined || r[i] === null ? '' : r[i]);
+    for (let i = 0; i < width; i++) out.push(r[i] === undefined || r[i] === null ? '' : textCell_(r[i]));
     return out;
   });
   sh.getRange(start, 1, data.length, width).setValues(data);
@@ -94,10 +95,10 @@ function normalizeCycle_(r) {
 }
 
 function cycleToRow_(c) {
-  if (c._bad) return CYCLE_FIELDS.map(function (f) { return c._orig[f[0]]; });
+  if (c._bad) return CYCLE_FIELDS.map(function (f) { return textCell_(c._orig[f[0]]); });
   return CYCLE_FIELDS.map(function (f) {
     const v = c[f[0]];
-    return v === null || v === undefined ? '' : v;
+    return v === null || v === undefined ? '' : textCell_(v);
   });
 }
 

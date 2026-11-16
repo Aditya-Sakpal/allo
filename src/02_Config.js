@@ -32,7 +32,7 @@ function readConfigRaw_(ss) {
   const sh = ss.getSheetByName(SHEETS.CONFIG);
   const raw = {};
   if (!sh || sh.getLastRow() < 2) return raw;
-  const vals = sh.getRange(2, 1, sh.getLastRow() - 1, 2).getDisplayValues();
+  const vals = sh.getRange(2, 1, sh.getLastRow() - 1, 2).getDisplayValues().map(function (r) { return r.map(fromCell_); });
   vals.forEach(function (r) {
     const k = String(r[0]).trim();
     if (k) raw[k] = String(r[1]);

@@ -105,6 +105,19 @@ function durationText_(ms) {
   return m + 'm';
 }
 
+/*
+ * A script write turns any string starting with "=" into a formula, even in a plain-text ('@') cell,
+ * so user text like =IMPORTDATA(...) would run. A leading apostrophe forces text. Sheets either
+ * consumes it or (in some text cells) keeps it, so readers strip it again and both cases agree.
+ */
+function textCell_(v) {
+  return typeof v === 'string' && /^[=+\-@]/.test(v) ? "'" + v : v;
+}
+
+function fromCell_(v) {
+  return typeof v === 'string' && /^'[=+\-@]/.test(v) ? v.slice(1) : v;
+}
+
 function escapeHtml_(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
